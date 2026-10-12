@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Save Sara Game</title>
+  <style>
+    body {
+      background-color: pink;
+      text-align: center;
+      margin: 0;
+      padding: 30px 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    h1 {
+      font-size: clamp(20px, 5vw, 32px);
+      margin: 0 0 16px;
+    }
+
+    /* v2：角色圖統一相框大小，所有圖片都放在同一個框裡、靠底對齊 */
+    .char-frame {
+      width: 240px;
+      height: 220px;
+      margin: 0 auto 16px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .char-frame img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center bottom;
+      image-rendering: pixelated;   /* 像素風圖片放大後保持清晰 */
+    }
+
+    /* 延續原本 myDiv 風格；v2：改成最大寬度，手機也不會跑版 */
+    .myDiv {
+      border: 3px outset pink;
+      background-color: #FFFFFF;
+      width: 100%;
+      max-width: 650px;
+      margin: 0 auto;
+      padding: 20px;
+      box-sizing: border-box;
+      text-align: center;
+    }
+
+    /* 頂部狀態顯示 */
+    .status-text {
+      font-family: monospace;
+      font-weight: bold;
+      color: #666;
+      margin-bottom: 8px;
+    }
+
+    /* v2：進度條 */
+    .progress-label {
+      font-family: monospace;
+      font-size: 13px;
+      color: #999;
+      text-align: left;
+      margin-bottom: 4px;
+    }
+    .progress-track {
+      height: 12px;
+      background-color: #fff0f5;
+      border: 2px inset #ffb6c1;
+      margin-bottom: 18px;
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background-color: #ff6f91;
+      transition: width 0.4s ease;
+    }
+
+    /* 選項按鈕樣式：粉紅系復古風格 */
+    .choice-btn {
+      display: block;
+      width: 100%;
+      margin: 10px 0;
+      padding: 10px 14px;
+      background-color: #fff0f5;
+      border: 2px outset #ffb6c1;
+      font-family: monospace;
+      font-size: 15px;
+      font-weight: bold;
+      color: #333;
+      cursor: pointer;
+      text-align: left;
+    }
+    .choice-btn:hover {
+      background-color: #ffe4e1;
+    }
+
+    /* 繼續與開始主按鈕 */
+    .main-btn {
+      padding: 10px 25px;
+      font-size: 18px;
+      color: red;
+      font-weight: bold;
+      background-color: #ffffff;
+      border: 3px outset pink;
+      cursor: pointer;
+      font-family: monospace;
+    }
+    .main-btn:active {
+      border-style: inset;
+    }
+
+    /* Sara 說話或生氣/開心反應框 */
+    .reaction-box {
+      font-family: monospace;
+      font-size: 16px;
+      line-height: 1.6;
+      padding: 15px;
+      background-color: #fffafa;
+      border: 1px dashed red;
+      margin-bottom: 15px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- 標題 -->
+  <h1 id="main-title">
+    <font color="#ff0000"><code>Hi, I’m Sara, please save me!!!!!!</code></font>
+  </h1>
+
+  <!-- 角色立繪圖片：切換場景或情緒時會動態更新 src（v2：改用相對路徑＋固定相框） -->
+  <div class="char-frame">
+    <img id="char-img" src="image/me.png" alt="Sara">
+  </div>
+
+  <!-- 核心對話框 -->
+  <div class="myDiv">
+    <div id="status" class="status-text">不開心次數：0 / 3 ｜ 好感度：0</div>
+
+    <!-- v2：進度條 -->
+    <div id="progress-label" class="progress-label">進度：尚未開始</div>
+    <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+
+    <!-- 文本區域 -->
+    <div id="dialogue-area">
+      <p><font color="brown" size="4"><b><code>
+        "我不小心掉進遊戲裡了，這裡又黑又暗...帶著我平安通關吧！<br>每個關卡會有開心選項（好感+2）、普通選項（好感+1）、不開心選項(好感-1)<br>
+        對了還有一件不太重要的事，<font color="#ff0000">只要不開心三次我好像就會死掉？"</font>
+      </code></b></font></p>
+    </div>
+
+    <!-- 選項與按鈕放置區 -->
+    <div id="action-area">
+      <button class="main-btn" onclick="startGame()">START</button>
+    </div>
+  </div>
+
+  <script>
+    // 遊戲核心數據
+    let currentStep = 0;
+    let angerCount = 0;
+    let loveScore = 0;
+
+    // v2：圖片全部改為相對路徑（GitHub Pages 上才讀得到）
+    const IMG = {
+      normal: "image/me.png",
+      angry:  "image/angry.png",
+      cry:    "image/cry.png",
+      die:    "image/die.png"
+    };
+    const DEFAULT_IMG = IMG.normal;
+
+    // 預先載入圖片，避免切換表情時閃爍
+    Object.values(IMG).forEach(src => { const i = new Image(); i.src = src; });
+
+    // 劇本庫：每個場景都可以設定專屬的 img
+    // reactionImg 代表選了該選項後跳出反應時換的表情圖片
+    const scenarios = [
+      {
+        title: "關卡 1：迷濛的早晨",
+        img: DEFAULT_IMG,
+        text: `"一大早你看到她坐在沙發上面無表情，看起來非常累的樣子"`,
+        options: [
+          {
+            text: "你還好嗎？看起來很累",
+            score: -1,
+            anger: 1,
+            reaction: `<好感度-1> "..."（好煩喔老娘不想講話，不要吵我！！）`,
+            reactionImg: IMG.angry
+          },
+          {
+            text: "早安，要喝水嗎？",
+            score: 1,
+            anger: 0,
+            reaction: `<好感度+1>"..."（迷濛的點頭）`,
+          },
+          {
+            text: "不理會，做自己的事",
+            score: 2,
+            anger: 0,
+            reaction: `<好感度+2> "..."（醒了之後開心的繼續未被干擾的早晨）`,
+            reactionImg: DEFAULT_IMG
+          }
+        ]
+      },
+      {
+        title: "關卡 2：Sara請你幫忙",
+        img: DEFAULT_IMG,
+        text: `"幫我拿一下筆，夾在我包包大格的那個筆記本裡面"`,
+        options: [
+          {
+            text: "打開她的包包，找到筆拿給她",
+            score: 2,
+            anger: 0,
+            reaction: `<好感度+2> "嘿嘿謝謝"`,
+            reactionImg: DEFAULT_IMG
+          },
+          {
+            text: "打開她的包包，偷偷的瞄她的筆記本是寫什麼的",
+            score: -1,
+            anger: 1,
+            reaction: `<好感度-1> "跟你有什麼關係啊？？"（Sara 不開心的皺眉）`,
+            reactionImg: IMG.angry
+          },
+          {
+            text: "妳自己拿吧",
+            score: 1,
+            anger: 0,
+            reaction: `<好感度+1> "你都不幫人家"（其實也沒關係）`,
+            reactionImg: null
+          }
+        ]
+      },
+      {
+        title: "關卡 3：Sara跟你在客廳",
+        img: DEFAULT_IMG,
+        text: `"她大聲唱著很難聽的怪歌，你覺得很吵"`,
+        options: [
+          {
+            text: "你好吵喔",
+            score: 2,
+            anger: 0,
+            reaction: `<好感度+2> "切，無聊"（繼續在你旁邊大唱10秒之後停止）`,
+            reactionImg: DEFAULT_IMG
+          },
+          {
+            text: "閉嘴啦！",
+            score: -1,
+            anger: 1,
+            reaction: `<好感度-1> "你在大聲什麼啦！？"`,
+            reactionImg: IMG.angry
+          },
+          {
+            text: "不理她",
+            score: 1,
+            anger: 0,
+            reaction: `<好感度+1>`,
+            reactionImg: null
+          }
+        ]
+      },
+      {
+        title: "關卡 4：Sara踢到桌腳，痛苦的無聲倒地",
+        img: DEFAULT_IMG,
+        text: `"呃..."`,
+        options: [
+          {
+            text: "你還好嗎！？（衝上前攙扶）",
+            score: -1,
+            anger: 1,
+            reaction: `<好感度-1> "等一下啦先不要碰我..."`,
+            reactionImg: DEFAULT_IMG
+          },
+          {
+            text: "不太理會，她等等會自己站起來",
+            score: 1,
+            anger: 0,
+            reaction: `<好感度+1>`,
+            reactionImg: null
+          },
+          {
+            text: "你還好嗎！？（站在旁邊遠觀她的反應）",
+            score: 2,
+            anger: 0,
+            reaction: `<好感度+2> "..."（艱難地點頭）`,
+            reactionImg: null
+          }
+        ]
+      },
+      {
+        title: "關卡 5：Sara正在發呆",
+        img: DEFAULT_IMG,
+        text: `"她盯著你背後的某個點，但你想跟她聊天"`,
+        options: [
+          {
+            text: "你知道嗎？我今天...（自顧自開始講）",
+            score: 2,
+            anger: 0,
+            reaction: `<好感度+2> "..." （她即將上演一邊發呆一邊回你的特技）`,
+            reactionImg: DEFAULT_IMG
+          },
+          {
+            text: "你在幹嘛？（舉手揮揮她的眼前）",
+            score: -1,
+            anger: 1,
+            reaction: `<好感度-1> "..."（Sara 其實隱隱不喜歡發呆被強制中斷）`,
+            reactionImg: IMG.angry
+          },
+          {
+            text: "欸欸欸欸欸欸欸欸聽我說啦",
+            score: 1,
+            anger: 0,
+            reaction: `<好感度+1> "幹嘛啦"`,
+            reactionImg: null
+          }
+        ]
+      },
+      {
+        title: "關卡 6：Sara嘗試了一道新料理，但是味道一言難盡",
+        img: DEFAULT_IMG,
+        text: `"你吃吃看！我新做的苦瓜布丁，好吃嗎？"`,
+        options: [
+          {
+            text: "沒有到完全不能吃啦...但我覺得不要加苦瓜會比較好",
+            score: 2,
+            anger: 0,
+            reaction: `"啊...是嗎！那我再試試看"（Sara 感動地看著你）`,
+            reactionImg: DEFAULT_IMG
+          },
+          {
+            text: "超級好吃。",
+            score: 1,
+            anger: 0,
+            reaction: null
+          },
+          {
+            text: "這真的不好吃啦，下次別做了，超級難吃",
+            score: -1,
+            anger: 1,
+            reaction: `"喔..."（Sara認為你不想吃她做的食物了，難過的哭泣）`,
+            reactionImg: IMG.cry
+          }
+        ]
+      }
+    ];
+
+    function updateStatus() {
+      document.getElementById("status").innerText =
+        `不開心次數：${angerCount} / 3 ｜ 好感度：${loveScore}`;
+    }
+
+    // v2：進度條（done = 已完成的關卡數）
+    function updateProgress(done, label) {
+      const total = scenarios.length;
+      document.getElementById("progress-fill").style.width = (done / total * 100) + "%";
+      document.getElementById("progress-label").innerText =
+        label || `進度：關卡 ${Math.min(done + 1, total)} / ${total}`;
+    }
+
+    // v2：洗牌，讓每次選項順序都不同（Fisher–Yates）
+    function shuffle(arr) {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function startGame() {
+      currentStep = 0;
+      angerCount = 0;
+      loveScore = 0;
+      renderScene();
+    }
+
+    // 渲染場景
+    function renderScene() {
+      updateStatus();
+      updateProgress(currentStep);
+      const current = scenarios[currentStep];
+
+      document.getElementById("main-title").innerHTML =
+        `<font color="#ff0000"><code>${current.title}</code></font>`;
+      document.getElementById("char-img").src = current.img;
+
+      document.getElementById("dialogue-area").innerHTML = `
+        <p><font color="brown" size="4"><b><code>${current.text}</code></b></font></p>
+      `;
+
+      const actionArea = document.getElementById("action-area");
+      actionArea.innerHTML = "";
+
+      // 產生選項按鈕（v2：順序隨機）
+      shuffle(current.options).forEach((opt) => {
+        const btn = document.createElement("button");
+        btn.className = "choice-btn";
+        btn.innerText = "▶ " + opt.text;
+        btn.onclick = () => choose(opt);
+        actionArea.appendChild(btn);
+      });
+    }
+
+    // 點擊選項
+    function choose(opt) {
+      loveScore += opt.score;
+      angerCount += opt.anger;
+      updateStatus();
+
+      // 判斷生氣滿 3 次：立刻死亡壞結局
+      if (angerCount >= 3) {
+        showFeedback(opt.reaction, opt.reactionImg, () => showEnding("dead"));
+        return;
+      }
+
+      // 普通選項（無反饋描述），直接前進
+      if (!opt.reaction) {
+        next();
+        return;
+      }
+
+      // 有反應描述（開心或生氣），先顯示過場
+      showFeedback(opt.reaction, opt.reactionImg, () => next());
+    }
+
+    // 顯示反應與更換表情圖
+    function showFeedback(reactionText, reactionImg, continueAction) {
+      if (reactionImg) {
+        document.getElementById("char-img").src = reactionImg;
+      }
+
+      document.getElementById("dialogue-area").innerHTML = `
+        <div class="reaction-box">
+          <b><font color="red"><code>${reactionText}</code></font></b>
+        </div>
+      `;
+
+      const actionArea = document.getElementById("action-area");
+      actionArea.innerHTML = "";
+
+      const nextBtn = document.createElement("button");
+      nextBtn.className = "main-btn";
+      nextBtn.innerText = "繼續 ➔";
+      nextBtn.onclick = continueAction;
+      actionArea.appendChild(nextBtn);
+    }
+
+    function next() {
+      currentStep++;
+      if (currentStep < scenarios.length) {
+        renderScene();
+      } else {
+        // 結算通關結局
+        if (loveScore >= 11) {
+          showEnding("love");
+        } else {
+          showEnding("peace");
+        }
+      }
+    }
+
+    // 結局判定
+    function showEnding(type) {
+      const dialogueArea = document.getElementById("dialogue-area");
+      const actionArea = document.getElementById("action-area");
+      const charImg = document.getElementById("char-img");
+      actionArea.innerHTML = "";
+
+      if (type === "dead") {
+        // v2：死亡結局改用專屬圖片 die.png；進度條停在死掉的那一關
+        updateProgress(currentStep, `進度：在關卡 ${currentStep + 1} 陣亡`);
+        charImg.src = IMG.die;
+        document.getElementById("main-title").innerHTML =
+          `<font color="black"><code>GAME OVER...</code></font>`;
+        dialogueArea.innerHTML = `
+          <p><font color="black" size="4"><b><code>
+            Bad Ending：Sara氣急攻心 心肌梗塞死亡<br><br>
+            "我說過不要惹我不開心的..."<br>
+          </code></b></font></p>
+        `;
+      } else if (type === "love") {
+        updateProgress(scenarios.length, "進度：全部通關！");
+        charImg.src = DEFAULT_IMG;
+        document.getElementById("main-title").innerHTML =
+          `<font color="#ff0000"><code>HAPPY ENDING</code></font>`;
+        dialogueArea.innerHTML = `
+          <p><font color="#d81b60" size="4"><b><code>
+            Happy Ending：愛上你<br><br>
+            "終於逃出來了！你真的好懂我...<br>
+            那個...要不要吃我做的雪Ｑ餅？"<br><br>
+            最終好感度：${loveScore}（PERFECT）
+          </code></b></font></p>
+        `;
+      } else {
+        updateProgress(scenarios.length, "進度：全部通關！");
+        charImg.src = DEFAULT_IMG;
+        document.getElementById("main-title").innerHTML =
+          `<font color="green"><code>NORMAL ENDING</code></font>`;
+        dialogueArea.innerHTML = `
+          <p><font color="brown" size="4"><b><code>
+            Normal Ending：你平安的度過一天<br><br>
+            "呼，終於走出這個鬼遊戲了！<br>
+            雖然你偶爾有點煩，但還是謝啦！"<br><br>
+            最終好感度：${loveScore}
+          </code></b></font></p>
+        `;
+      }
+
+      const restartBtn = document.createElement("button");
+      restartBtn.className = "main-btn";
+      restartBtn.innerText = "RESTART";
+      restartBtn.onclick = startGame;
+      actionArea.appendChild(restartBtn);
+    }
+  </script>
+
+</body>
+</html>
